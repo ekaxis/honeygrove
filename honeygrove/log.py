@@ -1,8 +1,11 @@
+
+from honeygrove.geoip import geoip
 from honeygrove.config import Config
 
 from datetime import datetime
 from hashlib import sha256
 import json
+import pprint
 from socket import getfqdn
 
 if Config.general.use_broker:
@@ -27,6 +30,18 @@ if Config.general.use_geoip:
 
 PLACEHOLDER_STRING = '--'
 
+pp = pprint.PrettyPrinter(indent=2, width=41, compact=False, sort_dicts=True)
+
+
+def _log_json(json_data):
+    if Config.jsonlog.use_jsonlog:
+        wjson = json_data
+        if isinstance(wjson, dict):
+            wjson = json.dumps(wjson)
+        write_json(wjson + '\n')
+    if Config.jsonlog.print_jsonlog:
+        pp.pprint(json_data)
+
 
 def _log_status(message):
     if Config.logging.log_status:
@@ -40,6 +55,13 @@ def _log_alert(message):
         write(message + '\n')
     if Config.logging.print_alerts:
         print(message)
+
+
+def write_json(json_data):
+    if isinstance(json_data, dict):
+        json_data = json.dumps(json_data)
+    with open(str(Config.jsonlog.log), 'a+') as fp:
+        fp.write(json_data)
 
 
 def write(message):
@@ -87,6 +109,23 @@ def get_coordinates(ip: str):
         return [lat, lon]
     else:
         return None
+
+
+def get_geolocation(ip: str):
+
+    if Config.geoip.use_geoip:
+        try:
+            addr = geoip(ip)
+            if addr.get('message'):
+                # checks if it is a private IP
+                # to avoid unnecessary treatments and data 
+                # formatting in subsequent functions, None will be returned
+                return None
+            return addr
+        except Exception as err:
+            pass
+    return None
+
 
 
 def get_time():
@@ -169,6 +208,14 @@ def login(service: str, ip: str, port: int, successful: bool, user: str, secret:
               'destination': get_ecs_address_dict(Config.general.address, port),
               'honeygrove': ecs_hg}
 
+    addr = get_geolocation(ip)
+    addr = addr if addr is not None else {}
+
+    values['source']['addr'] = addr
+
+    if not coordinates and addr:
+        coordinates = (addr['lat'], addr['lon'])
+
     # Append geo coordinates of source, if available
     if coordinates:
         values['source']['geo'] = {'location': '{:.4f},{:.4f}'.format(coordinates[0], coordinates[1])}
@@ -184,7 +231,9 @@ def login(service: str, ip: str, port: int, successful: bool, user: str, secret:
 
     message = ('{} [LOGIN] {}, {}:{}, Lat: {}, Lon: {}, {}, {}, {}, {}'
                '').format(timestamp, service, ip, port, lat, lon, successful, user, secret, valid_for)
+
     _log_alert(message)
+    _log_json(values)
 
 
 def request(service: str, remote_ip: str, remote_port: int, local_ip: str, local_port: int, req: str, user: str = None, request_type: str = None):
@@ -220,6 +269,14 @@ def request(service: str, remote_ip: str, remote_port: int, local_ip: str, local
               'destination': get_ecs_address_dict(local_ip, local_port),
               'honeygrove': ecs_hg}
 
+    addr = get_geolocation(remote_ip)
+    addr = addr if addr is not None else {}
+
+    values['source']['addr'] = addr
+
+    if not coordinates and addr:
+        coordinates = (addr['lat'], addr['lon'])
+
     # Append geo coordinates of source, if available
     if coordinates:
         values['source']['geo'] = {'location': '{:.4f},{:.4f}'.format(coordinates[0], coordinates[1])}
@@ -236,6 +293,7 @@ def request(service: str, remote_ip: str, remote_port: int, local_ip: str, local
     message = ('{} [REQUEST] {}, {}:{}->{}:{}, Lat: {}, Lon: {}, {}, {}, {}'
                '').format(timestamp, service, remote_ip, remote_port, local_ip, local_port, lat, lon, req, user, request_type)
     _log_alert(message)
+    _log_json(values)
 
 
 def response(service: str, remote_ip: str, remote_port: int, local_ip: str, local_port: int, resp: str, user: str = None, status_code=None):
@@ -270,6 +328,14 @@ def response(service: str, remote_ip: str, remote_port: int, local_ip: str, loca
               'source': get_ecs_address_dict(local_ip, local_port),
               'destination': get_ecs_address_dict(remote_ip, remote_port),
               'honeygrove': ecs_hg}
+    
+    addr = get_geolocation(remote_ip)
+    addr = addr if addr is not None else {}
+
+    values['source']['addr'] = addr
+
+    if not coordinates and addr:
+        coordinates = (addr['lat'], addr['lon'])
 
     # Append geo coordinates of source, if available
     if coordinates:
@@ -286,7 +352,9 @@ def response(service: str, remote_ip: str, remote_port: int, local_ip: str, loca
 
     message = ('{} [RESPONSE] {}, {}:{}->{}:{}, Lat: {}, Lon: {}, {}, {}, {}'
                '').format(timestamp, service, local_ip, local_port, remote_ip, remote_port, lat, lon, resp, user, status_code)
+
     _log_alert(message)
+    _log_json(values)
 
 
 def file(service: str, ip: str, file_name: str, file_path: str = None, user: str = None):
@@ -319,6 +387,14 @@ def file(service: str, ip: str, file_name: str, file_path: str = None, user: str
               'source': get_ecs_address_dict(ip),
               'destination': get_ecs_address_dict(Config.general.address),
               'honeygrove': ecs_hg}
+            
+    addr = get_geolocation(ip)
+    addr = addr if addr is not None else {}
+
+    values['source']['addr'] = addr
+
+    if not coordinates and addr:
+        coordinates = (addr['lat'], addr['lon'])
 
     # Append geo coordinates of source, if available
     if coordinates:
@@ -337,7 +413,9 @@ def file(service: str, ip: str, file_name: str, file_path: str = None, user: str
 
     message = ('{} [FILE] {}, {}, Lat: {}, Lon: {}, {}, {}'
                '').format(timestamp, service, ip, lat, lon, file_name, user)
+
     _log_alert(message)
+    _log_json(values)
 
 
 def scan(ip, port, time, scan_type):
@@ -364,6 +442,14 @@ def scan(ip, port, time, scan_type):
               'source': get_ecs_address_dict(ip),
               'destination': get_ecs_address_dict(Config.general.address, port),
               'honeygrove': ecs_hg}
+    
+    addr = get_geolocation(ip)
+    addr = addr if addr is not None else {}
+
+    values['source']['addr'] = addr
+
+    if not coordinates and addr:
+        coordinates = (addr['lat'], addr['lon'])
 
     # Append geo coordinates of source, if available
     if coordinates:
@@ -380,7 +466,9 @@ def scan(ip, port, time, scan_type):
 
     message = ('{} [{}-SCAN] {}:{}, Lat: {}, Lon: {}'
                '').format(timestamp, scan_type, ip, port, lat, lon)
+
     _log_alert(message)
+    _log_json(values)
 
 
 def limit_reached(service: str, ip: str):
@@ -405,6 +493,14 @@ def limit_reached(service: str, ip: str):
               'source': get_ecs_address_dict(ip),
               'destination': get_ecs_address_dict(Config.general.address),
               'honeygrove': ecs_hg}
+    
+    addr = get_geolocation(ip)
+    addr = addr if addr is not None else {}
+
+    values['source']['addr'] = addr
+
+    if not coordinates and addr:
+        coordinates = (addr['lat'], addr['lon'])
 
     # Append geo coordinates of source, if available
     if coordinates:
@@ -421,6 +517,7 @@ def limit_reached(service: str, ip: str):
 
     message = '{} [LIMIT REACHED] {}, {}, Lat: {}, Lon: {}'.format(timestamp, service, ip, lat, lon)
     _log_alert(message)
+    _log_json(values)
 
 
 def heartbeat():
@@ -439,3 +536,4 @@ def heartbeat():
 
     message = ('{} [Heartbeat]'.format(timestamp))
     _log_status(message)
+    _log_json(values)

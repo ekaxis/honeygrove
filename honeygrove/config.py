@@ -1,5 +1,6 @@
 from pathlib import PurePath
 import pickle
+import peewee
 
 
 # Utility methods to pickle some config parts
@@ -64,7 +65,7 @@ class Config:
     folder.quarantine = folder.resources / 'quarantine'
     folder.tls = folder.resources / 'tls'
     if general.use_geoip:
-        folder.geo_ip = folder.resources / 'geo_ip.db'
+        folder.geo_ip = folder.resources / 'geo_ip.dat'
     # Log folder (currently only a single file)
     folder.log = folder.base / 'logs' / 'log.txt'
 
@@ -116,7 +117,7 @@ class Config:
     # SSH service configuration
     ssh = ConfigSection()
     ssh.name = "SSH"
-    ssh.port = 22
+    ssh.port = 2222
     ssh.connections_per_host = general.max_connections_per_host
     # must start with "SSH-2.0-"
     ssh.banner = b'SSH-2.0-' + general.hostname.encode()
@@ -230,3 +231,14 @@ class Config:
         broker.ssl_ca_path = None  # Path to directory with CA files
         broker.ssl_certificate = None  # Own certificate
         broker.ssl_key_file = None  # Own key
+
+    # geolocation with https://ip-api.com/docs/api
+    geoip = ConfigSection()
+    geoip.use_geoip = True
+    geoip.database = peewee.SqliteDatabase( folder.resources / 'honeytokendb' / 'geoip.db' )
+
+    # save log in json format
+    jsonlog = ConfigSection()
+    jsonlog.use_jsonlog = True
+    jsonlog.print_jsonlog = True
+    jsonlog.log = folder.base / 'logs' / 'jsonlog.txt'

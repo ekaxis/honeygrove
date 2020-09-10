@@ -4,3 +4,4 @@ honeygrove/resources/**
 .venv
 .idea
 *.iml
+.vscode

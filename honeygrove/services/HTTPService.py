@@ -118,6 +118,9 @@ class HTTPProtocol(Protocol):
         if pageNotFound:
             self.notFoundSite = str(self.path / HTTPService.html_dictionary['404'][0])
 
+        # fix: builtins.UnboundLocalError: local variable 'login_string' referenced before assignment
+        login_string = ""
+
         # Handle GETs
         if self.requestType == "GET" and ('.gif' in self.page or '.png' in self.page or '/dashboard_files/' in self.page or '.jpg' in self.page or '.woff' in self.page or '.ttf' in self.page or '.svg' in self.page):
             message = HTTPService.notFoundStatus + "\n"
